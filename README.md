@@ -106,6 +106,42 @@ Without this setup, you'll likely run into errors like:
 
 > `Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work.`
 
+## Configuration (fork `home-infra` branch)
+
+Everything defaults to upstream behaviour, so a local checkout runs as before.
+The variables exist so the bridge and server can run headless in containers.
+
+**Bridge (`whatsapp-bridge`)**
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `WHATSAPP_STORE_DIR` | `store` | `whatsapp.db` (the session) and `messages.db` |
+| `WHATSAPP_MEDIA_DIR` | store dir | where `download_media` writes files |
+| `WHATSAPP_BRIDGE_ADDR` | `127.0.0.1:8080` | REST API listen address (upstream listened on all interfaces) |
+| `WHATSAPP_QR_PNG` | unset | also write each pairing QR code to this PNG file |
+| `WHATSAPP_PAIR_PHONE` | unset | pair with an 8-character code instead of a QR (phone number with country code) |
+
+When the phone unlinks the device, the bridge now exits instead of idling, so a
+restart policy brings it straight back into pairing.
+
+**MCP server (`whatsapp-mcp-server`)**
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `WHATSAPP_DB_PATH` | `../whatsapp-bridge/store/messages.db` | message database written by the bridge |
+| `WHATSAPP_API_BASE_URL` | `http://localhost:8080/api` | bridge REST API |
+| `WHATSAPP_MEDIA_ROOT` | unset | if set, `send_file` / `send_audio_message` refuse paths outside it |
+| `MCP_TRANSPORT` | `stdio` | `stdio`, `sse` or `streamable-http` |
+| `MCP_HOST` / `MCP_PORT` | `127.0.0.1` / `8000` | listen address for the HTTP transports |
+| `MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` | unset | comma-separated DNS-rebinding allowlist; replaces the loopback defaults |
+
+The bridge and server exchange **file paths**, not file contents, so when they run in
+separate containers both must mount the media directory at the same path, and the
+server's `TMPDIR` must be on it too (audio conversion writes a temp `.ogg` that the
+bridge then reads).
+
+The `whatsmeow` dependency is also bumped: WhatsApp rejects old client versions.
+
 ## Architecture Overview
 
 This application consists of two main components:

@@ -1,5 +1,7 @@
+import os
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from whatsapp import (
     search_contacts as whatsapp_search_contacts,
     list_messages as whatsapp_list_messages,
@@ -15,8 +17,34 @@ from whatsapp import (
     download_media as whatsapp_download_media
 )
 
+def _csv_env(name: str) -> List[str]:
+    return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
+
+
+# Transport is stdio unless MCP_TRANSPORT says otherwise, so running it as a
+# local subprocess of an MCP client behaves exactly as before. For a
+# long-lived server shared by several clients, use MCP_TRANSPORT=streamable-http.
+MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "stdio")
+MCP_HOST = os.environ.get("MCP_HOST", "127.0.0.1")
+MCP_PORT = int(os.environ.get("MCP_PORT", "8000"))
+
+# The SDK only enables DNS-rebinding protection by itself when bound to
+# loopback. Behind a reverse proxy (or bound to 0.0.0.0 in a container) list
+# the public Host names here; doing so *replaces* the loopback defaults, so
+# include those too if local requests should keep working.
+_allowed_hosts = _csv_env("MCP_ALLOWED_HOSTS")
+_transport_security = (
+    TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_allowed_hosts,
+        allowed_origins=_csv_env("MCP_ALLOWED_ORIGINS"),
+    )
+    if _allowed_hosts
+    else None
+)
+
 # Initialize FastMCP server
-mcp = FastMCP("whatsapp")
+mcp = FastMCP("whatsapp", host=MCP_HOST, port=MCP_PORT, transport_security=_transport_security)
 
 @mcp.tool()
 def search_contacts(query: str) -> List[Dict[str, Any]]:
@@ -248,4 +276,4 @@ def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     # Initialize and run the server
-    mcp.run(transport='stdio')
+    mcp.run(transport=MCP_TRANSPORT)

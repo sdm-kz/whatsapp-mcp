@@ -7,8 +7,28 @@ import requests
 import json
 import audio
 
-MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
-WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
+MESSAGES_DB_PATH = os.environ.get(
+    "WHATSAPP_DB_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db'),
+)
+WHATSAPP_API_BASE_URL = os.environ.get("WHATSAPP_API_BASE_URL", "http://localhost:8080/api")
+
+# When set, send_file / send_audio_message only accept paths beneath this
+# directory. The bridge reads whatever path it is given, so over a remote
+# transport this is what stops a client from asking it to send arbitrary files
+# off the host (session database included).
+WHATSAPP_MEDIA_ROOT = os.environ.get("WHATSAPP_MEDIA_ROOT")
+
+
+def _check_media_path(media_path: str) -> Optional[str]:
+    """Return an error message if media_path is not allowed, else None."""
+    if not WHATSAPP_MEDIA_ROOT:
+        return None
+    root = os.path.realpath(WHATSAPP_MEDIA_ROOT)
+    path = os.path.realpath(media_path)
+    if os.path.commonpath([root, path]) != root:
+        return f"Media path must be under {WHATSAPP_MEDIA_ROOT}: {media_path}"
+    return None
 
 @dataclass
 class Message:
@@ -659,6 +679,10 @@ def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
         if not media_path:
             return False, "Media path must be provided"
         
+        path_error = _check_media_path(media_path)
+        if path_error:
+            return False, path_error
+
         if not os.path.isfile(media_path):
             return False, f"Media file not found: {media_path}"
         
@@ -693,6 +717,10 @@ def send_audio_message(recipient: str, media_path: str) -> Tuple[bool, str]:
         if not media_path:
             return False, "Media path must be provided"
         
+        path_error = _check_media_path(media_path)
+        if path_error:
+            return False, path_error
+
         if not os.path.isfile(media_path):
             return False, f"Media file not found: {media_path}"
 
